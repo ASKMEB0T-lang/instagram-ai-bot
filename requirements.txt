@@ -1,4 +1,4 @@
 instagrapi==1.16.16
-requests==2.31.0
-python-dotenv==1.0.0
-Pillow==10.0.1
+requests==2.28.2
+python-dotenv==0.19.0
+pillow==9.5.0  👈 هذا الإصدار يعمل بدون بناء
