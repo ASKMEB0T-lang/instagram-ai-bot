@@ -1,0 +1,10 @@
+# Cohere API Configuration
+COHERE_API_KEY=OLpDIVzr2jTSQwO32yqLiwUz3N1oaiBDm63Nck2Z
+
+# Instagram Credentials
+INSTAGRAM_USERNAME=your_instagram_username
+INSTAGRAM_PASSWORD=your_instagram_password
+
+# App Settings
+LOG_LEVEL=INFO
+RATE_LIMIT_DELAY=15
