@@ -5,67 +5,51 @@ import random
 import requests
 from instagrapi import Client
 from instagrapi.exceptions import LoginRequired, ChallengeRequired
-import json
 from flask import Flask
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = Flask(__name__)  # ✅ لإبقاء Render يعمل
+# تشغيل خادم ويب بسيط ليمنع Render من إيقاف التطبيق
+app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "✅ Instagram Bot is Running on Render!"
+    return "✅ Instagram AI Bot is running on Render!"
 
-print("🚀 بدء تشغيل بوت إنستغرام المتقدم...")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+print("🚀 تشغيل بوت إنستغرام + Flask على Render...")
 
 class AdvancedInstagramBot:
     def __init__(self):
         self.cl = Client()
-        self.session_file = "session.json"
-        self.cohere_api_key = os.getenv("COHERE_API_KEY", "YOUR_KEY")
+        self.cohere_api_key = os.getenv("COHERE_API_KEY")
         self.processed_messages = set()
         self.setup_advanced_settings()
-        self.load_session()
 
     def setup_advanced_settings(self):
         try:
-            self.cl.set_settings({})
-            logger.info("✅ إعدادات الجهاز جاهزة")
+            user_agents = [
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X)",
+                "Mozilla/5.0 (Linux; Android 10; SM-G973F)",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+            ]
+            self.cl.set_settings({
+                "user_agent": random.choice(user_agents),
+                "device_settings": {
+                    "app_version": "219.0.0.12.117",
+                    "android_version": 29,
+                    "android_release": "10.0"
+                }
+            })
+            logger.info("✅ إعدادات تجنّب الحظر جاهزة")
         except Exception as e:
             logger.error(f"❌ خطأ في الإعدادات: {e}")
 
-    def load_session(self):
-        if os.path.exists(self.session_file):
-            try:
-                self.cl.load_settings(self.session_file)
-                logger.info("🔁 تم تحميل جلسة Instagram من ملف session.json")
-            except:
-                logger.warning("⚠️ فشل تحميل الجلسة، سيتم تسجيل الدخول من جديد")
-
-    def save_session(self):
-        try:
-            self.cl.dump_settings(self.session_file)
-            logger.info("💾 تم حفظ الجلسة في session.json")
-        except Exception as e:
-            logger.error(f"❌ لم يتم حفظ الجلسة: {e}")
-
     def smart_login(self):
+        username = os.getenv("INSTA_USERNAME")
+        password = os.getenv("INSTA_PASSWORD")
         try:
-            self.cl.get_timeline_feed()  # هل الجلسة مازالت صالحة؟
-            logger.info("✅ تم استخدام الجلسة المحفوظة دون تسجيل دخول")
-            return True
-        except:
-            logger.info("🔐 جلسة غير صالحة، سيتم تسجيل الدخول الآن")
-
-        try:
-            username = os.getenv("IG_USERNAME")
-            password = os.getenv("IG_PASSWORD")
-
-            logger.info("🔐 تسجيل الدخول الآن دون تأخير طويل...")
             self.cl.login(username, password)
-            self.save_session()
-            logger.info("✅ تسجيل الدخول ناجح")
+            logger.info("✅ تسجيل الدخول تم بنجاح")
             return True
         except Exception as e:
             logger.error(f"❌ فشل تسجيل الدخول: {e}")
@@ -78,45 +62,46 @@ class AdvancedInstagramBot:
                 "Authorization": f"Bearer {self.cohere_api_key}",
                 "Content-Type": "application/json"
             }
-            prompt = f"المستخدم: {message}\nالرد باختصار وبأسلوب ودود:"
-            data = {"model": "command", "prompt": prompt, "max_tokens": 50}
+            data = {
+                "model": "command",
+                "prompt": f"المستخدم قال: {message}\nرد بطريقة ودية وبجملة مختصرة:",
+                "max_tokens": 50,
+                "temperature": 0.7
+            }
             response = requests.post(url, json=data, headers=headers, timeout=10)
-
             if response.status_code == 200:
                 return response.json()['generations'][0]['text'].strip()
-            else:
-                return "شكراً لتواصلك 😊"
+            return "شكراً لتواصلك! 😊"
         except:
-            return "سعيد برسالتك! 🌟"
+            return "سعيد برسالتك! 💬"
 
-    def safe_check_messages(self):
+    def check_messages(self):
         try:
             threads = self.cl.direct_threads(limit=5)
-            for t in threads:
-                if t.unseen_count > 0:
-                    msgs = self.cl.direct_messages(t.id, limit=2)
-                    for msg in msgs:
+            for thread in threads:
+                if thread.unseen_count > 0:
+                    messages = self.cl.direct_messages(thread.id, limit=1)
+                    for msg in messages:
                         if msg.user_id != self.cl.user_id:
                             reply = self.get_ai_response(msg.text)
-                            self.cl.direct_send(reply, thread_ids=[t.id])
-                            logger.info(f"📩 رد: {reply}")
-            return True
+                            self.cl.direct_send(reply, thread_ids=[thread.id])
+                            logger.info(f"✅ رد على: {msg.text}")
         except Exception as e:
-            logger.error(f"❌ خطأ في قراءة الرسائل: {e}")
-            return False
+            logger.error(f"❌ خطأ الرسائل: {e}")
 
     def run(self):
-        if not self.smart_login():
+        if not self.smart_login(): 
             return
-
+        
         while True:
-            self.safe_check_messages()
-            time.sleep(20)
+            self.check_messages()
+            time.sleep(random.randint(20, 35))
 
 if __name__ == "__main__":
     bot = AdvancedInstagramBot()
-    import threading
-    threading.Thread(target=bot.run).start()
-
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    
+    # تشغيل Flask في Thread منفصل
+    from threading import Thread
+    Thread(target=lambda: app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))).start()
+    
+    bot.run()
