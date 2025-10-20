@@ -3,41 +3,53 @@ import time
 import logging
 import requests
 import random
+import sys
 from instagrapi import Client
 from dotenv import load_dotenv
 
+# عرض معلومات النظام
+print(f"🐍 إصدار Python: {sys.version}")
+print(f"🚀 بدء تشغيل بوت إنستغرام AI مع Python 3.13 و Pillow 11+")
+
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
-
-print("🚀 بدء تشغيل بوت إنستغرام AI مع Python 3.13...")
 
 class InstagramBot:
     def __init__(self):
         self.cl = Client()
-        self.cohere_api_key = os.getenv('COHERE_API_KEY', 'OLpDIVzr2jTSQwO32yqLiwUz3N1oaiBDm63Nck2Z')
+        self.cohere_api_key = "OLpDIVzr2jTSQwO32yqLiwUz3N1oaiBDm63Nck2Z"
         self.processed_messages = set()
         
-        if not self.cohere_api_key:
-            logger.error("❌ مفتاح Cohere API غير موجود")
-            raise ValueError("Cohere API key is required")
+        # التحقق من توفر الحزم المطلوبة
+        try:
+            from PIL import Image
+            print("✅ Pillow/PIL متوفر ويعمل بنجاح")
+        except ImportError as e:
+            print(f"❌ خطأ في Pillow/PIL: {e}")
+            raise
     
     def login(self):
         """تسجيل الدخول إلى إنستغرام"""
         try:
-            username = os.getenv('INSTAGRAM_USERNAME', 'askme.b0t')
-            password = os.getenv('INSTAGRAM_PASSWORD', '123Aze@#')
+            username = "askme.b0t"
+            password = "123Aze@#"
             
-            logger.info("🔐 جاري تسجيل الدخول...")
+            logger.info("🔐 جاري تسجيل الدخول إلى إنستغرام...")
             
             # إعدادات متقدمة لتجنب الحظر
-            self.cl.set_locale("en_US")
-            self.cl.set_country("US")
-            self.cl.set_timezone_offset(0)
-            self.cl.delay_range = [2, 5]
+            settings = {
+                "locale": "en_US",
+                "country": "US", 
+                "timezone_offset": 0,
+                "delay_range": [2, 5]
+            }
             
-            self.cl.login(username, password)
+            self.cl.login(username, password, **settings)
             logger.info("✅ تم التسجيل بنجاح!")
             return True
             
@@ -55,7 +67,7 @@ class InstagramBot:
             }
             
             prompt = f"""
-            أنت مساعد عربي ذكي على إنستغرام. 
+            أنت مساعد عربي ذكي على إنستغرام.
             المستخدم يقول: "{message}"
             
             ارد بطريقة:
@@ -83,6 +95,10 @@ class InstagramBot:
                 reply = result['generations'][0]['text'].strip()
                 logger.info(f"🤖 تم توليد رد: {reply}")
                 return reply
+                
+            elif response.status_code == 429:
+                logger.warning("⏳ تجاوز الحد المسموح في Cohere API")
+                return self.get_fallback_response(message)
             else:
                 logger.warning(f"⚠️ خطأ في API: {response.status_code}")
                 return self.get_fallback_response(message)
@@ -93,37 +109,37 @@ class InstagramBot:
 
     def get_fallback_response(self, message):
         """ردود احتياطية ذكية"""
-        fallbacks_arabic = [
-            "شكراً على رسالتك! 🌸 سأرد عليك قريباً",
-            "أهلاً بك! 😊 رسالتك وصلت بنجاح",
-            "مساؤك جميلة! 🌟 شكراً للتواصل معنا",
-            "سعيد بتواصلك! 💫 شكراً للرسالة",
-            "تم استلام رسالتك! 🌸 سأرد عليك عما قريب"
-        ]
+        # اكتشاف اللغة تلقائياً
+        arabic_chars = any(char in message for char in 'ابتثجحخدذرزسشصضطظعغفقكلمنهوي')
         
-        fallbacks_english = [
-            "Thanks for your message! 🌸 I'll reply soon",
-            "Hello! 😊 Your message was received",
-            "Great to hear from you! 🌟",
-            "Thanks for reaching out! 💫",
-            "Message received! 🌸 I'll get back to you"
-        ]
-        
-        # تحديد اللغة تلقائياً
-        if any(char in message for char in 'ابتثجحخدذرزسشصضطظعغفقكلمنهوي'):
-            return random.choice(fallbacks_arabic)
+        if arabic_chars:
+            responses = [
+                "شكراً على رسالتك! 🌸 سأرد عليك قريباً",
+                "أهلاً بك! 😊 رسالتك وصلت بنجاح",
+                "مساؤك جميلة! 🌟 شكراً للتواصل معنا",
+                "سعيد بتواصلك! 💫 شكراً للرسالة",
+                "تم استلام رسالتك! 🌸 سأرد عليك عما قريب"
+            ]
         else:
-            return random.choice(fallbacks_english)
+            responses = [
+                "Thanks for your message! 🌸 I'll reply soon",
+                "Hello! 😊 Your message was received",
+                "Great to hear from you! 🌟",
+                "Thanks for reaching out! 💫",
+                "Message received! 🌸 I'll get back to you"
+            ]
+        
+        return random.choice(responses)
 
     def check_and_reply_messages(self):
         """فحص الرسائل والرد عليها"""
         try:
-            threads = self.cl.direct_threads(limit=8)
+            threads = self.cl.direct_threads(limit=10)
             replied_count = 0
             
             for thread in threads:
                 if hasattr(thread, 'unseen_count') and thread.unseen_count > 0:
-                    messages = self.cl.direct_messages(thread.id, limit=3)
+                    messages = self.cl.direct_messages(thread.id, limit=5)
                     
                     for msg in messages:
                         if (not hasattr(msg, 'is_seen') or not msg.is_seen) and msg.user_id != self.cl.user_id:
@@ -144,7 +160,7 @@ class InstagramBot:
                                 replied_count += 1
                                 
                                 # انتظار لتجنب rate limits
-                                time.sleep(12)
+                                time.sleep(15)
             
             return replied_count
             
@@ -158,22 +174,24 @@ class InstagramBot:
             logger.error("❌ لا يمكن بدء التشغيل بسبب فشل التسجيل")
             return
         
-        logger.info("🤖 البوت يعمل الآن! جاري فحص الرسائل كل 25 ثانية...")
+        logger.info("🤖 البوت يعمل الآن! جاري فحص الرسائل كل 30 ثانية...")
         
+        cycle = 0
         while True:
             try:
+                cycle += 1
                 messages_handled = self.check_and_reply_messages()
                 
                 if messages_handled > 0:
-                    logger.info(f"🎉 تم الرد على {messages_handled} رسالة")
+                    logger.info(f"🎉 تم الرد على {messages_handled} رسالة - الدورة {cycle}")
                 else:
-                    logger.info("🔍 لا توجد رسائل جديدة...")
+                    logger.info(f"🔍 لا توجد رسائل جديدة - الدورة {cycle}")
                 
-                time.sleep(25)  # انتظار 25 ثانية بين الدورات
+                time.sleep(30)
                 
             except Exception as e:
                 logger.error(f"💥 خطأ غير متوقع: {e}")
-                time.sleep(30)
+                time.sleep(60)
 
 if __name__ == "__main__":
     try:
