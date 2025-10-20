@@ -1,10 +1,10 @@
-Cohere API Configuration
+# Cohere API Configuration
 COHERE_API_KEY=OLpDIVzr2jTSQwO32yqLiwUz3N1oaiBDm63Nck2Z
 
-Instagram Credentials
+# Instagram Credentials
 INSTA_USERNAME=askme.b0t
 INSTA_PASSWORD=123Aze@#
 
-App Settings
+# App Settings
 LOG_LEVEL=INFO
 RATE_LIMIT_DELAY=15
