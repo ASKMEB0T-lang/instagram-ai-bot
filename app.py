@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 # عرض معلومات النظام
 print(f"🐍 إصدار Python: {sys.version}")
-print(f"🚀 بدء تشغيل بوت إنستغرام AI مع Python 3.13 و Pillow 11+")
+print(f"🚀 بدء تشغيل بوت إنستغرام AI مع Python 3.13 و Pillow 12.0.0")
 
 load_dotenv()
 
@@ -34,22 +34,21 @@ class InstagramBot:
             raise
     
     def login(self):
-        """تسجيل الدخول إلى إنستغرام"""
+        """تسجيل الدخول إلى إنستغرام - الإصدار المصحح"""
         try:
             username = "askme.b0t"
             password = "123Aze@#"
             
             logger.info("🔐 جاري تسجيل الدخول إلى إنستغرام...")
             
-            # إعدادات متقدمة لتجنب الحظر
-            settings = {
-                "locale": "en_US",
-                "country": "US", 
-                "timezone_offset": 0,
-                "delay_range": [2, 5]
-            }
+            # الإعدادات المصححة - بدون معاملات خاطئة
+            self.cl.set_locale("en_US")
+            self.cl.set_country("US")
+            self.cl.set_timezone_offset(0)
+            self.cl.delay_range = [2, 5]
             
-            self.cl.login(username, password, **settings)
+            # تسجيل الدخول بدون معاملات إضافية
+            self.cl.login(username, password)
             logger.info("✅ تم التسجيل بنجاح!")
             return True
             
@@ -57,8 +56,55 @@ class InstagramBot:
             logger.error(f"❌ خطأ في التسجيل: {e}")
             return False
 
+    def check_custom_responses(self, message):
+        """التحقق من الرسائل المخصصة والرد عليها"""
+        message_lower = message.lower()
+        
+        # 1. عند ذكر إسرائيل
+        if any(word in message_lower for word in ['اسرائيل', 'إسرائيل', 'israel']):
+            return "أنا لا أعرفها هل تقصد فلسطين؟ 🇵🇸"
+        
+        # 2. عندما يسأل عن من صنعه أو من كورك
+        if any(word in message_lower for word in ['من صنعك', 'من كورك', 'من دربك', 'من أنشأك', 'من برمجك', 'من صانعك']):
+            return "إبراهيم 👨‍💻"
+        
+        # 3. عندما يسأل عن الأديان
+        religion_keywords = ['دين', 'ديانة', 'مسيحي', 'يهودي', 'بوذي', 'هندوسي', 'مسلم', 'christian', 'jewish', 'buddhist', 'hindu']
+        if any(word in message_lower for word in religion_keywords):
+            return "أنا لا أعرف أي دين غير الإسلام 🕌"
+        
+        # 4. محتوى 18+
+        adult_keywords = ['سكس', 'جنس', 'sex', 'porn', 'إباحي', 'عاري', 'نaked', 'شهوة', 'علاقة جنسية']
+        if any(word in message_lower for word in adult_keywords):
+            return "هل أنت أكثر من 18 سنة؟ 🔞"
+        
+        # 5. ردود إسلامية
+        islamic_keywords = ['الله', 'الرسول', 'محمد', 'قرآن', 'صلاة', 'رمضان', 'الحج', 'islam', 'muhammad', 'quran']
+        if any(word in message_lower for word in islamic_keywords):
+            islamic_responses = [
+                "الحمد لله رب العالمين 🙏",
+                "سبحان الله وبحمده 🌟",
+                "الله أكبر 🕌",
+                "لا إله إلا الله محمد رسول الله ☪️"
+            ]
+            return random.choice(islamic_responses)
+        
+        # 6. تحية إسلامية
+        if any(word in message_lower for word in ['السلام عليكم', 'سلام عليكم', 'عليكم السلام']):
+            return "وعليكم السلام ورحمة الله وبركاته 🌸"
+        
+        return None
+
     def get_ai_response(self, message):
-        """الحصول على رد من Cohere AI"""
+        """الحصول على رد من Cohere AI مع التحقق من الردود المخصصة أولاً"""
+        
+        # التحقق من الردود المخصصة أولاً
+        custom_response = self.check_custom_responses(message)
+        if custom_response:
+            logger.info(f"🎯 استخدام رد مخصص: {custom_response}")
+            return custom_response
+        
+        # إذا لم يكن هناك رد مخصص، استخدام Cohere AI
         try:
             url = "https://api.cohere.ai/v1/generate"
             headers = {
@@ -66,9 +112,16 @@ class InstagramBot:
                 "Content-Type": "application/json"
             }
             
+            # إضافة توجيهات إضافية لـ Cohere لتجنب مواضيع حساسة
             prompt = f"""
             أنت مساعد عربي ذكي على إنستغرام.
             المستخدم يقول: "{message}"
+            
+            توجيهات مهمة:
+            - لا تتحدث عن الأديان الأخرى غير الإسلام
+            - لا تناقش مواضيع سياسية حساسة
+            - تجنب المحتوى غير اللائق
+            - حافظ على الوداعة والأدب
             
             ارد بطريقة:
             - ودودة وجذابة
@@ -83,7 +136,7 @@ class InstagramBot:
                 "model": "command",
                 "prompt": prompt,
                 "max_tokens": 70,
-                "temperature": 0.8,
+                "temperature": 0.7,
                 "truncate": "END"
             }
             
