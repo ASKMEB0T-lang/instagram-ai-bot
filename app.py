@@ -3,7 +3,7 @@ import time
 import logging
 import random
 import requests
-import threading
+import json
 from flask import Flask
 from instagrapi import Client
 from instagrapi.exceptions import LoginRequired, ChallengeRequired
@@ -12,104 +12,136 @@ from dotenv import load_dotenv
 # تحميل المتغيرات من .env
 load_dotenv()
 
-# إعداد تطبيق Flask
 app = Flask(__name__)
 
-# إعداد نظام التسجيل
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+# إعداد التسجيل
 logging.basicConfig(
-    level=LOG_LEVEL,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('bot.log', encoding='utf-8')
-    ]
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
 class InstagramAIBot:
     def __init__(self):
         self.cl = Client()
-        self.username = os.getenv("INSTA_USERNAME")  # تم التعديل هنا
-        self.password = os.getenv("INSTA_PASSWORD")  # تم التعديل هنا
+        self.username = os.getenv("INSTA_USERNAME")
+        self.password = os.getenv("INSTA_PASSWORD")
         self.cohere_api_key = os.getenv("COHERE_API_KEY")
-        self.rate_limit_delay = int(os.getenv("RATE_LIMIT_DELAY", "15"))  # تم التعديل هنا
         self.processed_messages = set()
         self.session_file = "session.json"
-        self.is_running = False
-        self.bot_thread = None
         
-        # التحقق من وجود المتغيرات المطلوبة
         if not all([self.username, self.password, self.cohere_api_key]):
-            logger.error("Missing required environment variables")
-            raise ValueError("Please set all required environment variables in .env file")
+            logger.error("Missing environment variables")
+            raise ValueError("Set all required environment variables")
         
-        logger.info("Instagram AI Bot initialized successfully")
-        self.apply_device_settings()
+        self.setup_client()
 
-    def apply_device_settings(self):
-        """إعداد إعدادات الجهاز لمحاكاة جهاز حقيقي"""
+    def setup_client(self):
+        """إعداد عميل إنستغرام بإعدادات محسنة"""
         try:
-            user_agents = [
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
-                "Mozilla/5.0 (Linux; Android 11; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            ]
-            
-            device_settings = {
-                "user_agent": random.choice(user_agents),
-                "device_settings": {
-                    "app_version": "219.0.0.12.117",
-                    "android_version": 29,
-                    "android_release": "10.0",
-                    "dpi": "480dpi",
-                    "resolution": "1080x1920",
-                    "manufacturer": "Samsung",
-                    "device": "SM-G973F",
-                    "model": "Galaxy S10",
-                    "cpu": "qcom",
-                    "version_code": "314665256"
-                }
-            }
-            
-            self.cl.set_settings(device_settings)
-            logger.info("Device settings applied successfully")
-        except Exception as e:
-            logger.error(f"Error applying device settings: {e}")
-            raise
-
-    def login(self):
-        """تسجيل الدخول إلى إنستغرام مع إدارة الجلسات"""
-        try:
+            # تحميل جلسة موجودة أو إنشاء جديدة
             if os.path.exists(self.session_file):
                 logger.info("Loading existing session...")
                 self.cl.load_settings(self.session_file)
-                # محاولة استخدام الجلسة المحفوظة
+                # اختبار الجلسة
                 try:
                     self.cl.get_timeline_feed()
                     logger.info("Session is valid")
-                    return True
+                    return
                 except LoginRequired:
-                    logger.info("Session expired, logging in again...")
+                    logger.info("Session expired, creating new...")
+                    os.remove(self.session_file)
             
-            logger.info("Performing new login...")
+            # إعدادات جهاز أكثر واقعية
+            self.cl.set_settings({
+                **self.cl.get_settings(),
+                **{
+                    "user_agent": "Instagram 219.0.0.12.117 Android (29/10; 480dpi; 1080x1920; samsung; SM-G973F; beyond1; exynos9820; en_US; 314665256)",
+                    "device_settings": {
+                        "app_version": "219.0.0.12.117",
+                        "android_version": 29,
+                        "android_release": "10.0",
+                        "dpi": "480dpi",
+                        "resolution": "1080x1920",
+                        "manufacturer": "samsung",
+                        "device": "SM-G973F",
+                        "model": "beyond1",
+                        "cpu": "exynos9820",
+                        "version_code": "314665256"
+                    },
+                    "country": "US",
+                    "locale": "en_US",
+                    "timezone_offset": -14400,
+                }
+            })
+            
+            # تسجيل الدخول
+            self.login()
+            
+        except Exception as e:
+            logger.error(f"Setup error: {e}")
+            raise
+
+    def login(self):
+        """تسجيل الدخول بمعدل أبطأ ومعالجة أفضل للأخطاء"""
+        try:
+            logger.info("Attempting login...")
+            
+            # تأخير عشوائي قبل التسجيل
+            time.sleep(random.uniform(5, 15))
+            
+            # التسجيل
             self.cl.login(self.username, self.password)
+            
+            # حفظ الجلسة
             self.cl.dump_settings(self.session_file)
             logger.info("Login successful and session saved")
+            
+            # تأخير بعد التسجيل
+            time.sleep(random.uniform(3, 8))
+            
             return True
             
         except ChallengeRequired:
-            logger.error("Instagram requires challenge verification")
+            logger.error("Challenge required - manual verification needed")
             return False
         except Exception as e:
             logger.error(f"Login failed: {e}")
+            # إعادة تعيين الإعدادات عند الفشل
+            if os.path.exists(self.session_file):
+                os.remove(self.session_file)
             return False
 
-    def generate_ai_reply(self, user_message):
-        """إنشاء رد باستخدام Cohere AI"""
+    def safe_request(self, func, *args, **kwargs):
+        """تنفيذ الطلبات بشكل آمن مع تجنب الحظر"""
         try:
-            if not user_message or len(user_message.strip()) == 0:
-                return "مرحباً! كيف يمكنني مساعدتك؟"
+            # تأخير عشوائي قبل كل طلب
+            delay = random.uniform(10, 30)
+            logger.debug(f"Waiting {delay:.1f}s before request")
+            time.sleep(delay)
+            
+            result = func(*args, **kwargs)
+            
+            # تأخير عشوائي بعد كل طلب
+            time.sleep(random.uniform(5, 15))
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Request failed: {e}")
+            
+            # إذا كان خطأ في التسجيل، حاول إعادة التسجيل
+            if isinstance(e, LoginRequired):
+                logger.info("Re-login required")
+                self.login()
+            
+            return None
+
+    def generate_ai_reply(self, user_message):
+        """إنشاء رد AI مع معالجة أخطاء محسنة"""
+        try:
+            if not user_message or len(user_message.strip()) < 2:
+                return "مرحباً! 😊"
             
             url = "https://api.cohere.ai/v1/generate"
             headers = {
@@ -117,194 +149,138 @@ class InstagramAIBot:
                 "Content-Type": "application/json"
             }
             
-            prompt = f"""
-            المستخدم قال: '{user_message}'
-            ارد برد قصير وودود ومناسب لرسالة المستخدم. يجب أن يكون الرد باللغة العربية.
-            الرد:
-            """
+            prompt = f"رد على هذه الرسالة بطريقة ودودة وعربية: '{user_message}'"
             
             data = {
                 "model": "command",
                 "prompt": prompt,
-                "max_tokens": 50,
+                "max_tokens": 40,
                 "temperature": 0.7,
                 "stop_sequences": ["\n"]
             }
             
-            response = requests.post(url, json=data, headers=headers, timeout=30)
+            response = requests.post(url, json=data, headers=headers, timeout=20)
             
             if response.status_code == 200:
                 reply = response.json()['generations'][0]['text'].strip()
-                # تنظيف الرد من أي أحرف غير مرغوب فيها
-                reply = reply.replace('"', '').replace("'", "").strip()
-                return reply if reply else "شكراً على رسالتك! 😊"
+                return reply if reply and len(reply) > 2 else "شكراً على رسالتك! 🌟"
             else:
-                logger.warning(f"Cohere API returned status {response.status_code}")
-                return "شكراً على رسالتك، سأرد عليك قريباً! 👍"
+                logger.warning(f"Cohere API error: {response.status_code}")
+                return "أهلاً! شكراً للتواصل معي 👍"
                 
-        except requests.exceptions.Timeout:
-            logger.error("Cohere API timeout")
-            return "شكراً على رسالتك! ⏰"
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Cohere API request failed: {e}")
-            return "أهلاً وسهلاً! 🌟"
         except Exception as e:
-            logger.error(f"AI reply generation failed: {e}")
-            return "مرحباً! كيف الحال؟ 😊"
+            logger.error(f"AI reply error: {e}")
+            return "مرحباً! كيف يمكنني مساعدتك؟ 😊"
 
     def check_messages(self):
-        """فحص الرسائل الجديدة والرد عليها"""
+        """فحص الرسائل بمعدل آمن"""
         try:
-            threads = self.cl.direct_threads(limit=10)
-            new_messages_found = False
+            # استخدام الطلب الآمن
+            threads = self.safe_request(self.cl.direct_threads, limit=5)
+            if not threads:
+                return False
+            
+            new_messages = False
             
             for thread in threads:
                 if thread.unseen_count > 0:
-                    messages = self.cl.direct_messages(thread.id, limit=thread.unseen_count)
+                    messages = self.safe_request(self.cl.direct_messages, thread.id, limit=thread.unseen_count)
+                    if not messages:
+                        continue
                     
                     for msg in messages:
                         if msg.user_id != self.cl.user_id:
                             msg_id = f"{thread.id}_{msg.id}"
                             
                             if msg_id not in self.processed_messages:
-                                logger.info(f"New message from user {msg.user_id}: {msg.text}")
+                                logger.info(f"New message: {msg.text}")
                                 
-                                # توليد رد AI
-                                ai_reply = self.generate_ai_reply(msg.text)
+                                # توليد الرد
+                                reply = self.generate_ai_reply(msg.text)
                                 
-                                # إرسال الرد
-                                self.cl.direct_send(ai_reply, thread_ids=[thread.id])
+                                # إرسال الرد بشكل آمن
+                                self.safe_request(self.cl.direct_send, reply, thread_ids=[thread.id])
+                                
                                 self.processed_messages.add(msg_id)
-                                new_messages_found = True
-                                
-                                logger.info(f"Replied with: {ai_reply}")
-                                
-                                # استخدام RATE_LIMIT_DELAY من الإعدادات
-                                time.sleep(self.rate_limit_delay)
+                                new_messages = True
+                                logger.info(f"Replied: {reply}")
             
-            return new_messages_found
+            return new_messages
             
         except Exception as e:
-            logger.error(f"Error checking messages: {e}")
+            logger.error(f"Message check error: {e}")
             return False
 
-    def cleanup_old_messages(self):
-        """تنظيف الذاكرة من الرسائل القديمة"""
-        if len(self.processed_messages) > 1000:
-            # الاحتفاظ بـ 500 رسالة فقط
-            self.processed_messages = set(list(self.processed_messages)[-500:])
-            logger.info("Cleaned up old processed messages")
-
-    def run_bot(self):
-        """تشغيل البوت في حلقة منفصلة"""
-        logger.info("Starting Instagram AI Bot...")
+    def run_bot_loop(self):
+        """الحلقة الرئيسية للبوت بمعدلات آمنة"""
+        logger.info("Starting bot loop...")
         
         if not self.login():
-            logger.error("Login failed. Please check your credentials.")
+            logger.error("Initial login failed - stopping bot")
             return
-
-        logger.info("Bot is running and monitoring for new messages...")
         
-        consecutive_errors = 0
-        max_consecutive_errors = 5
+        error_count = 0
+        max_errors = 3
         
-        while self.is_running:
+        while True:
             try:
-                messages_processed = self.check_messages()
+                has_messages = self.check_messages()
                 
-                if messages_processed:
-                    logger.info("Processed new messages successfully")
-                    consecutive_errors = 0
+                if has_messages:
+                    logger.info("Processed messages successfully")
+                    error_count = 0
                 else:
-                    logger.debug("No new messages found")
+                    logger.debug("No new messages")
                 
-                # تنظيف الذاكرة دورياً
-                self.cleanup_old_messages()
-                
-                # انتظار عشوائي قبل الفحص التالي
-                sleep_time = random.randint(30, 60)
-                logger.debug(f"Sleeping for {sleep_time} seconds")
+                # انتظار طويل بين الدورات
+                sleep_time = random.randint(45, 90)
+                logger.debug(f"Next check in {sleep_time}s")
                 time.sleep(sleep_time)
                 
             except Exception as e:
-                consecutive_errors += 1
-                logger.error(f"Unexpected error in main loop: {e}")
+                error_count += 1
+                logger.error(f"Bot loop error #{error_count}: {e}")
                 
-                if consecutive_errors >= max_consecutive_errors:
-                    logger.error("Too many consecutive errors. Stopping bot.")
+                if error_count >= max_errors:
+                    logger.error("Too many errors - stopping bot")
                     break
                 
-                # انتظار أطول عند الأخطاء
+                # انتظار طويل عند الأخطاء
                 time.sleep(120)
 
-    def start(self):
-        """بدء تشغيل البوت في thread منفصل"""
-        if not self.is_running:
-            self.is_running = True
-            self.bot_thread = threading.Thread(target=self.run_bot)
-            self.bot_thread.daemon = True
-            self.bot_thread.start()
-            logger.info("Bot thread started")
-
-    def stop(self):
-        """إيقاف البوت"""
-        self.is_running = False
-        logger.info("Bot stopped")
-
-# إنشاء instance من البوت
+# تهيئة البوت
 bot = InstagramAIBot()
 
-# routes لتطبيق Flask
+# routes لـ Flask
 @app.route('/')
 def home():
-    return {
-        "status": "running",
-        "bot": "Instagram AI Bot",
-        "username": bot.username if bot else "Not initialized"
-    }
+    return {"status": "running", "service": "Instagram AI Bot"}
+
+@app.route('/health')
+def health():
+    return {"status": "healthy", "timestamp": time.time()}
 
 @app.route('/start')
 def start_bot():
-    try:
-        bot.start()
-        return {"status": "success", "message": "Bot started successfully"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-@app.route('/stop')
-def stop_bot():
-    try:
-        bot.stop()
-        return {"status": "success", "message": "Bot stopped successfully"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-@app.route('/status')
-def bot_status():
-    return {
-        "status": "running" if bot.is_running else "stopped",
-        "username": bot.username,
-        "processed_messages": len(bot.processed_messages)
-    }
-
-@app.route('/health')
-def health_check():
-    return {"status": "healthy", "timestamp": time.time()}
+    import threading
+    thread = threading.Thread(target=bot.run_bot_loop, daemon=True)
+    thread.start()
+    return {"status": "started", "message": "Bot started in background"}
 
 def main():
-    """الدالة الرئيسية لتشغيل التطبيق"""
+    """الدالة الرئيسية"""
     try:
-        # بدء البوت تلقائياً
-        bot.start()
+        # بدء البوت في الخلفية
+        import threading
+        bot_thread = threading.Thread(target=bot.run_bot_loop, daemon=True)
+        bot_thread.start()
         
-        # تشغيل خادم Flask
+        # تشغيل Flask
         port = int(os.environ.get('PORT', 5000))
         app.run(host='0.0.0.0', port=port, debug=False)
         
     except Exception as e:
-        logger.error(f"Failed to start application: {e}")
-    finally:
-        bot.stop()
+        logger.error(f"Application failed: {e}")
 
 if __name__ == "__main__":
     main()
